@@ -10,7 +10,7 @@ This directory contains comprehensive documentation for the SAL browser automati
 
 ### 📄 Available Documents
 
-1. **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical Reference
+1. **[ARCHITECTURE.md](docs/architecture.md)** - Technical Reference
    - Complete architectural analysis
    - Four key optimizations explained in detail
    - Comparative performance benchmarks (Puppeteer, Playwright, LPX)
@@ -18,7 +18,7 @@ This directory contains comprehensive documentation for the SAL browser automati
    - Future optimization opportunities
    - **Audience:** Software architects, senior engineers
 
-2. **[PERFORMANCE.md](PERFORMANCE.md)** - Optimization Plan & Results
+2. **[PERFORMANCE.md](docs/performance.md)** - Optimization Plan & Results
    - Performance budget tracking
    - Detailed optimization implementations
    - Baseline vs current metrics (2.61s → 0.75s)
@@ -26,21 +26,14 @@ This directory contains comprehensive documentation for the SAL browser automati
    - Success criteria and production results
    - **Audience:** Performance engineers, implementers
 
-3. **[ROADMAP.md](ROADMAP.md)** - Project Roadmap & TODOs
+3. **[ROADMAP.md](docs/roadmap.md)** - Project Roadmap & TODOs
    - Short-term priorities
    - Mid-term improvements
    - Long-term vision
    - Known issues and planned fixes
    - **Audience:** Contributors, project planners
 
-4. **[DMR-STATUS.md](DMR-STATUS.md)** - Docker Model Runner Configuration
-   - Current DMR setup and usage
-   - Known pooling compatibility issue
-   - Performance impact analysis
-   - Fallback behavior explanation
-   - **Audience:** Operators, troubleshooters
-
-5. **[EXECUTION-FLOW.md](EXECUTION-FLOW.md)** - Technical Execution Deep-Dive
+4. **[EXECUTION-FLOW.md](/docs/execution-flow.md)** - Technical Execution Deep-Dive
    - Step-by-step execution flow from prompt to result
    - Phase-by-phase breakdown with timing
    - Data transformations at each stage
@@ -48,7 +41,7 @@ This directory contains comprehensive documentation for the SAL browser automati
    - Debugging tips and profiling guidance
    - **Audience:** Contributors, implementers, advanced users
 
-6. **[USAGE-EXAMPLES.md](USAGE-EXAMPLES.md)** - Natural Language Prompt Guide
+6. **[USAGE-EXAMPLES.md](docs/usage.md)** - Natural Language Prompt Guide
    - Basic and advanced prompt examples
    - Prompt patterns and variations
    - Real-world use cases (e-commerce, SaaS, internal tools)
