@@ -1,0 +1,106 @@
+services:
+  # ------------------------------------------------------
+  # 1. Docker Model Runner (DMR) - Semantic Cache Engine
+  # NOTE: DMR model configuration with runtime_flags is not yet supported
+  # in Docker Compose as of 2025. The model must be run separately with:
+  #   export LLAMA_ARG_POOLING=mean
+  #   docker model run -d ai/smollm2
+  # Or use the fallback llama.cpp service below with --pooling mean flag
+  # ------------------------------------------------------
+  # sal-brain:
+  #   # DMR model service - awaiting official Compose syntax support
+  #   image: ai/smollm2:latest
+  #   container_name: sal-brain
+  #   restart: unless-stopped
+
+  # ------------------------------------------------------
+  # Standalone llama.cpp with embeddings + mean pooling
+  # Use this if DMR is not configured with LLAMA_ARG_POOLING=mean
+  # ------------------------------------------------------
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: sal-llm
+    command:
+      - --model
+      - /models/smollm2-360m-instruct.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "4096"
+      - --n-predict
+      - "512"
+      - --threads
+      - "4"
+      - --embeddings
+      - --pooling
+      - mean
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ------------------------------------------------------
+  # 2. Lightpanda Browser (with REAL CDP enabled)
+  # ------------------------------------------------------
+  lightpanda:
+    image: lightpanda/browser:latest
+    container_name: sal-lightpanda
+    command: ["serve", "--host", "0.0.0.0", "--port", "9222"]
+    ports:
+      - "9222:9222"
+    restart: unless-stopped
+
+  # ------------------------------------------------------
+  # 2. Demo App (your test application)
+  # ------------------------------------------------------
+  demo:
+    build: ./demo
+    container_name: sal-demo-app
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # ------------------------------------------------------
+  # 3. Automation (SAL + Puppeteer + Playwright)
+  # ------------------------------------------------------
+  automation:
+    build: ./automation
+    container_name: sal-automation
+    env_file: .env
+    working_dir: /automation
+    depends_on:
+      demo:
+        condition: service_started
+      ui:
+        condition: service_started
+    command: ["tail", "-f", "/dev/null"]
+    restart: unless-stopped
+
+  # ------------------------------------------------------
+  # 4. SAL UI (Enhance SSR + Hono + SSE)
+  # ------------------------------------------------------
+  ui:
+    build: ./ui
+    container_name: sal-ui
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+
+# ------------------------------------------------------
+# Shared Network & Volumes
+# ------------------------------------------------------
+networks:
+  default:
+    name: sal-net
+
+volumes:
+  model-cache:
+    driver: local

@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Demo Items</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+      body { padding: 32px; }
+      .card {
+        background: rgba(12, 20, 38, 0.9);
+        border: 1px solid #1e2d4b;
+        padding: 20px;
+        box-shadow: 0 0 0 4px #1e2d4b, 0 12px 30px rgba(0,0,0,0.35);
+      }
+      h1 { color: var(--accent); margin-bottom: 12px; }
+      ul { list-style: none; padding: 0; margin: 0; }
+      li {
+        padding: 10px;
+        margin-bottom: 8px;
+        background: #0f1c35;
+        border: 1px solid #1e2d4b;
+        color: var(--text);
+        display: flex;
+        justify-content: space-between;
+      }
+      span.tag {
+        color: var(--accent-2);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Products</h1>
+      <ul id="items-list">
+        <li data-sku="PX-001"><span>Pixel Blade</span><span class="tag">new</span></li>
+        <li data-sku="PX-002"><span>Retro Shield</span><span class="tag">hot</span></li>
+        <li data-sku="PX-003"><span>Neon Potion</span><span class="tag">restock</span></li>
+        <li data-sku="PX-004"><span>Arcade Core</span><span class="tag">rare</span></li>
+        <li data-sku="PX-005"><span>Quantum Chip</span><span class="tag">elite</span></li>
+      </ul>
+    </div>
+  </body>
+</html>

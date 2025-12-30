@@ -1,0 +1,29 @@
+:root {
+  --bg: #04060f;
+  --panel: #0c1426;
+  --panel-2: #0f1c35;
+  --accent: #34ffb9;
+  --accent-2: #ff5fa2;
+  --text: #e9f6ff;
+  --muted: #8aa3c0;
+  --border: #1e2d4b;
+  --pixel: 4px;
+  font-family: "Courier New", "Lucida Console", monospace;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(52, 255, 185, 0.08) 0, transparent 25%),
+    radial-gradient(circle at 90% 10%, rgba(255, 95, 162, 0.08) 0, transparent 22%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px),
+    linear-gradient(135deg, #050915 0%, #04060f 50%, #050915 100%);
+  image-rendering: pixelated;
+}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Demo Login</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+      body { padding: 40px; }
+      .card {
+        max-width: 420px;
+        margin: 0 auto;
+        background: rgba(12, 20, 38, 0.9);
+        border: 1px solid #1e2d4b;
+        padding: 24px;
+        box-shadow: 0 0 0 4px #1e2d4b, 0 12px 30px rgba(0,0,0,0.35);
+      }
+      h1 { color: var(--accent); margin-bottom: 12px; }
+      label { display: block; margin: 12px 0 6px; color: var(--muted); }
+      input {
+        width: 100%;
+        padding: 10px;
+        background: #0c1426;
+        border: 1px solid #1e2d4b;
+        color: var(--text);
+      }
+      button {
+        margin-top: 16px;
+        width: 100%;
+        padding: 12px;
+        background: var(--accent);
+        color: #04121b;
+        border: 0;
+        cursor: pointer;
+        font-weight: bold;
+        box-shadow: 0 0 0 4px #1e2d4b, 0 10px 20px rgba(52, 255, 185, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Demo Login</h1>
+      <form id="login-form">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="dummy@example.com" />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" value="password123" />
+        <button type="submit">Sign In</button>
+      </form>
+    </div>
+    <script>
+      document.getElementById("login-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        location.href = "/items";
+      });
+    </script>
+  </body>
+</html>
