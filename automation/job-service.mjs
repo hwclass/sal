@@ -9,6 +9,20 @@ const queue = [];
 let processing = false;
 const concurrency = parseInt(process.env.JOB_CONCURRENCY || process.env.CDP_POOL_SIZE || "1", 10) || 1;
 let active = 0;
+let shuttingDown = false;
+
+const metrics = {
+  total: 0,
+  succeeded: 0,
+  failed: 0,
+  avg_total_ms: 0,
+  avg_exec_ms: 0,
+  intent_dmr: 0,
+  intent_regex: 0,
+  embed_dmr: 0,
+  embed_local: 0,
+  embed_cache: 0
+};
 
 function authOk(req) {
   if (!AUTH_TOKEN) return true;
@@ -28,6 +42,7 @@ function html(res, body) {
 }
 
 function enqueue(job) {
+  if (shuttingDown) return;
   queue.push(job);
   drain();
 }
@@ -50,6 +65,19 @@ async function runJob(job) {
   jobs.set(job.id, { ...job, status: "running", startedAt: new Date().toISOString() });
   try {
     const result = await runSal(job.prompt, { envOverrides: job.env || {}, runId: job.id });
+    metrics.total += 1;
+    metrics.succeeded += 1;
+    const t = result?.timings?.total_ms || 0;
+    const e = result?.timings?.exec_ms || 0;
+    metrics.avg_total_ms = metrics.avg_total_ms === 0 ? t : (metrics.avg_total_ms + t) / 2;
+    metrics.avg_exec_ms = metrics.avg_exec_ms === 0 ? e : (metrics.avg_exec_ms + e) / 2;
+    const intentSource = result?.intent?.source;
+    if (intentSource === "dmr") metrics.intent_dmr += 1;
+    if (intentSource === "regex") metrics.intent_regex += 1;
+    const embSource = result?.embedding?.source;
+    if (embSource === "dmr") metrics.embed_dmr += 1;
+    if (embSource === "local") metrics.embed_local += 1;
+    if (embSource === "duckdb" || embSource === "memory") metrics.embed_cache += 1;
     jobs.set(job.id, {
       ...job,
       status: "succeeded",
@@ -57,6 +85,8 @@ async function runJob(job) {
       summary: result
     });
   } catch (err) {
+    metrics.total += 1;
+    metrics.failed += 1;
     jobs.set(job.id, {
       ...job,
       status: "failed",
@@ -132,6 +162,16 @@ const server = http.createServer(async (req, res) => {
     return html(res, renderUi());
   }
 
+  if (req.method === "GET" && path === "/metrics") {
+    return json(res, 200, {
+      ...metrics,
+      active,
+      pending: queue.length,
+      jobs: jobs.size,
+      shuttingDown
+    });
+  }
+
   if (req.method === "GET" && path === "/jobs") {
     return json(res, 200, { jobs: [...jobs.values()] });
   }
@@ -172,3 +212,12 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`[JOB] Service listening on ${PORT}, concurrency=${concurrency}`);
 });
+
+async function shutdown() {
+  shuttingDown = true;
+  console.log("[JOB] Shutting down, waiting for active jobs to finish...");
+  server.close();
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

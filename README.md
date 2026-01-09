@@ -429,6 +429,9 @@ docker compose up -d
 # Optional: run the job service (queue + basic UI)
 docker compose exec automation npm run service
 # UI: http://localhost:8787/ui  | API: GET/POST http://localhost:8787/jobs
+# Metrics: http://localhost:8787/metrics
+# Or start via compose profile:
+# docker compose --profile jobs up -d job-service
 
 # Check status
 docker compose ps
@@ -443,7 +446,25 @@ docker compose logs -f automation
 - **DMR Configuration (optional):** Requires `LLAMA_ARG_POOLING=mean` on host; if absent, intent extraction falls back to regex and embeddings use local Transformers.js.
 - **Session Management:** Sessions expire after 1 hour by default (configurable).
 - **Monitoring:** Access real-time UI at `http://localhost:4000`
-- **Job Service:** Simple queue + UI at `http://localhost:8787/ui` (API at `/jobs`). Set `JOB_SERVICE_TOKEN` to require Bearer auth. Respects `PLAN_CACHE_PATH` for shared cache across runs.
+- **Job Service:** Simple queue + UI at `http://localhost:8787/ui` (API at `/jobs`, metrics at `/metrics`). Set `JOB_SERVICE_TOKEN` to require Bearer auth. Respects `PLAN_CACHE_PATH` for shared cache across runs.
+
+### Real-Site Demo Checklist
+- Define per-site selectors/URLs in environment (LOGIN_*_SELECTOR, ITEMS_SELECTOR, *_URL/PATH).
+- Warm the plan/embedding cache with a first run; then rerun to show cache hit timings.
+- Use job service to queue multiple prompts and observe metrics (cache hits, timing) for Lightpanda showcase.
+- Capture before/after timings (cold vs warm, DMR vs local) for stakeholders.
+
+#### Per-Site Selector Config Example
+```
+TARGET_BASE_URL=https://example.com
+LOGIN_PATH=/auth/login
+ITEMS_PATH=/products
+LOGIN_EMAIL_SELECTOR=input[name="email"]
+LOGIN_PASSWORD_SELECTOR=input[name="password"]
+LOGIN_SUBMIT_SELECTOR=button[type="submit"]
+ITEMS_SELECTOR=.product-list .product-card
+```
+Set these in `.env` or pass as overrides to the job service (`env` field in POST /jobs).
 
 ---
 
