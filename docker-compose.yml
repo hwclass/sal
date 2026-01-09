@@ -85,6 +85,27 @@ services:
     restart: unless-stopped
 
   # ------------------------------------------------------
+  # 5. Job Service (queue + basic UI)
+  # ------------------------------------------------------
+  job-service:
+    build: ./automation
+    container_name: sal-job-service
+    env_file: .env
+    working_dir: /automation
+    depends_on:
+      lightpanda:
+        condition: service_started
+      demo:
+        condition: service_started
+      ui:
+        condition: service_started
+    command: ["npm", "run", "service"]
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+    profiles: ["jobs"]
+
+  # ------------------------------------------------------
   # 4. SAL UI (Enhance SSR + Hono + SSE)
   # ------------------------------------------------------
   ui:

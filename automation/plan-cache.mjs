@@ -2,6 +2,7 @@ import duckdb from "duckdb";
 
 let db;
 let conn;
+const DB_PATH = process.env.PLAN_CACHE_PATH || "plan-cache.duckdb";
 
 // Normalize prompt for better cache reuse
 // Remove variable tokens (numbers, emails) and normalize whitespace
@@ -19,7 +20,7 @@ function normalizePrompt(prompt) {
 
 export async function initPlanCache() {
   if (db) return;
-  db = new duckdb.Database("plan-cache.duckdb");
+  db = new duckdb.Database(DB_PATH);
   conn = db.connect();
 
   // Create plans table

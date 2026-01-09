@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "sal": "node sal-cli.mjs",
     "puppeteer": "node puppeteer-demo.mjs",
     "playwright": "node playwright-demo.mjs",
-    "sal": "node sal-cli.mjs",
-    "service": "node job-service.mjs",
-    "test": "node test-suite.mjs"
+    "benchmark": "node benchmarks.mjs",
+    "embedding-demo": "node embedding-demo.mjs"
   },
   "dependencies": {
     "duckdb": "^1.1.0",

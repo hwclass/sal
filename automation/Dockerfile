@@ -17,6 +17,6 @@ RUN npm install --omit=dev
 # Install Playwright browsers for benchmarking
 RUN npx playwright install chromium --with-deps
 
-COPY puppeteer-demo.mjs playwright-demo.mjs sal-cli.mjs plan-cache.mjs embeddings.mjs planner.mjs plan-compiler.mjs intent-classifier.mjs plan-templates.mjs sal-test.mjs test-suite.mjs embedding-cache-demo.mjs ./
+COPY . .
 
 CMD ["tail", "-f", "/dev/null"]

@@ -1,0 +1,14 @@
+{
+  "name": "sal-ui",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@enhance/ssr": "^3.0.0",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.4.0"
+  }
+}

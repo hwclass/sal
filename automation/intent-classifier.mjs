@@ -4,18 +4,23 @@
  * Returns semantic intent that can be mapped to plan templates
  */
 
+export let lastIntentMeta = null;
+
 /**
- * Extracts intent from prompt using small LLM with constrained output
+ * Extracts intent from prompt using small LLM with constrained output (DMR) or regex fallback.
  * @param {string} prompt - Natural language automation request
- * @returns {Promise<Object>} Structured intent object
+ * @returns {Promise<{ intent: Object, meta: Object }>} Structured intent object + metadata
  */
 export async function classifyIntent(prompt) {
+  lastIntentMeta = { source: "unknown", reason: null };
   const url = process.env.DMR_URL;
   const model = process.env.DMR_MODEL;
 
   if (!url || !model) {
     console.warn("[Intent] No DMR configured, falling back to regex extraction");
-    return extractIntentRegex(prompt);
+    const intent = extractIntentRegex(prompt);
+    lastIntentMeta = { source: "regex", reason: "dmr_not_configured" };
+    return { intent, meta: lastIntentMeta };
   }
 
   // Define strict JSON schema for intent
@@ -123,7 +128,9 @@ JSON:`;
 
     if (!res.ok) {
       console.warn(`[Intent] DMR error (${res.status}), falling back to regex`);
-      return extractIntentRegex(prompt);
+      const intent = extractIntentRegex(prompt);
+      lastIntentMeta = { source: "regex", reason: `dmr_http_${res.status}` };
+      return { intent, meta: lastIntentMeta };
     }
 
     const data = await res.json();
@@ -142,10 +149,14 @@ JSON:`;
     const intent = JSON.parse(content);
 
     // Validate and normalize with prompt for synonym correction
-    return normalizeIntent(intent, prompt);
+    const normalized = normalizeIntent(intent, prompt);
+    lastIntentMeta = { source: "dmr", reason: null };
+    return { intent: normalized, meta: lastIntentMeta };
   } catch (err) {
     console.warn(`[Intent] Classification failed: ${err.message}, falling back to regex`);
-    return extractIntentRegex(prompt);
+    const intent = extractIntentRegex(prompt);
+    lastIntentMeta = { source: "regex", reason: "dmr_error", error: err.message };
+    return { intent, meta: lastIntentMeta };
   }
 }
 

@@ -71,9 +71,9 @@ async function planHybrid(prompt, options) {
  */
 async function planWithIntent(prompt, options) {
   console.log("[SAL] Classifying intent...");
-  const intent = await classifyIntent(prompt);
+  const { intent, meta } = await classifyIntent(prompt);
 
-  console.log("[SAL] Intent:", JSON.stringify(intent));
+  console.log("[SAL] Intent:", JSON.stringify(intent), "meta:", JSON.stringify(meta));
 
   const steps = generatePlanFromIntent(intent, options);
 

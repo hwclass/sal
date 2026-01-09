@@ -1,7 +1,7 @@
-import { chromium } from "playwright";
 import yaml from "js-yaml";
 
 import { planConceptual } from "./planner.mjs";
+import { lastIntentMeta } from "./intent-classifier.mjs";
 import {
   initPlanCache,
   savePlan,
@@ -13,48 +13,58 @@ import {
   updateSessionLastUsed,
   deleteExpiredSessions
 } from "./plan-cache.mjs";
-import { embedPrompt } from "./embeddings.mjs";
+import { embedPrompt, lastEmbeddingMeta } from "./embeddings.mjs";
 import { compilePlan } from "./plan-compiler.mjs";
+import { initCDPPool, withPage } from "./cdp-pool.mjs";
 
-const resolveBase = () => {
-  const url = new URL(process.env.TARGET_BASE_URL);
-  if (["localhost", "127.0.0.1"].includes(url.hostname)) {
-    url.hostname = "host.docker.internal";
-  }
-  return url.toString().replace(/\/$/, "");
-};
-
-const APP_URL = resolveBase();
-const LOGIN_URL = `${APP_URL}${process.env.LOGIN_PATH}`;
-const ITEMS_URL = `${APP_URL}${process.env.ITEMS_PATH}`;
 const UI_URL = "http://sal-ui:4000";
-const PLAN_SIM_THRESHOLD = parseFloat(process.env.PLAN_SIM_THRESHOLD || "0.9");
+const PLAN_SIM_THRESHOLD_DEFAULT = parseFloat(process.env.PLAN_SIM_THRESHOLD || "0.9");
+let currentEnv = process.env;
 
-// Build envConfig by passing through ALL env vars that match selector/value/url patterns
-const envConfig = {
-  APP_URL,
-  LOGIN_URL,
-  ITEMS_URL
-};
+const makeRunId = () =>
+  `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-// Add all *_SELECTOR, *_VALUE, and *_URL env vars
-for (const [key, value] of Object.entries(process.env)) {
-  if (key.endsWith("_SELECTOR") || key.endsWith("_VALUE") || key.endsWith("_URL")) {
-    envConfig[key] = value;
+function buildEnv(envOverrides = {}) {
+  const mergedEnv = { ...process.env, ...envOverrides };
+
+  const resolveBase = () => {
+    const url = new URL(mergedEnv.TARGET_BASE_URL);
+    if (["localhost", "127.0.0.1"].includes(url.hostname)) {
+      url.hostname = "host.docker.internal";
+    }
+    return url.toString().replace(/\/$/, "");
+  };
+
+  const APP_URL = resolveBase();
+  const LOGIN_URL = `${APP_URL}${mergedEnv.LOGIN_PATH}`;
+  const ITEMS_URL = `${APP_URL}${mergedEnv.ITEMS_PATH}`;
+
+  const envConfig = {
+    APP_URL,
+    LOGIN_URL,
+    ITEMS_URL
+  };
+
+  for (const [key, value] of Object.entries(mergedEnv)) {
+    if (key.endsWith("_SELECTOR") || key.endsWith("_VALUE") || key.endsWith("_URL")) {
+      envConfig[key] = value;
+    }
   }
-}
 
-const envSnapshot = {
-  TARGET_BASE_URL: process.env.TARGET_BASE_URL,
-  LOGIN_PATH: process.env.LOGIN_PATH,
-  ITEMS_PATH: process.env.ITEMS_PATH,
-  LOGIN_EMAIL_SELECTOR: process.env.LOGIN_EMAIL_SELECTOR,
-  LOGIN_PASSWORD_SELECTOR: process.env.LOGIN_PASSWORD_SELECTOR,
-  LOGIN_SUBMIT_SELECTOR: process.env.LOGIN_SUBMIT_SELECTOR,
-  ITEMS_SELECTOR: process.env.ITEMS_SELECTOR,
-  USER_EMAIL: process.env.USER_EMAIL,
-  USER_PASS: process.env.USER_PASS
-};
+  const envSnapshot = {
+    TARGET_BASE_URL: mergedEnv.TARGET_BASE_URL,
+    LOGIN_PATH: mergedEnv.LOGIN_PATH,
+    ITEMS_PATH: mergedEnv.ITEMS_PATH,
+    LOGIN_EMAIL_SELECTOR: mergedEnv.LOGIN_EMAIL_SELECTOR,
+    LOGIN_PASSWORD_SELECTOR: mergedEnv.LOGIN_PASSWORD_SELECTOR,
+    LOGIN_SUBMIT_SELECTOR: mergedEnv.LOGIN_SUBMIT_SELECTOR,
+    ITEMS_SELECTOR: mergedEnv.ITEMS_SELECTOR,
+    USER_EMAIL: mergedEnv.USER_EMAIL,
+    USER_PASS: mergedEnv.USER_PASS
+  };
+
+  return { mergedEnv, envConfig, envSnapshot, APP_URL };
+}
 
 async function postEvent(type, payload) {
   await fetch(`${UI_URL}/event`, {
@@ -71,7 +81,7 @@ async function log(msg) {
 
 const envReplace = (input) => {
   if (typeof input !== "string") return input;
-  return input.replace(/\$\{([^}]+)\}/g, (_, key) => process.env[key] ?? "");
+  return input.replace(/\$\{([^}]+)\}/g, (_, key) => currentEnv[key] ?? "");
 };
 
 function detectExtractLimit(prompt = "") {
@@ -93,6 +103,9 @@ async function executeStep(page, step) {
       return;
 
     case "fill":
+      if (!step.selector || !String(step.selector).trim()) {
+        throw new Error("Fill step missing selector");
+      }
       await page.fill(
         envReplace(step.selector || ""),
         envReplace(step.value || "")
@@ -100,6 +113,9 @@ async function executeStep(page, step) {
       return;
 
     case "click":
+      if (!step.selector || !String(step.selector).trim()) {
+        throw new Error("Click step missing selector");
+      }
       await page.click(envReplace(step.selector || ""));
       await page.waitForLoadState("domcontentloaded");
       console.log(`  → Current URL after click: ${page.url()}`);
@@ -182,13 +198,18 @@ async function executeStep(page, step) {
   }
 }
 
-async function main() {
-  await initPlanCache();
-  const start = Date.now();
+export async function runSal(promptInput, options = {}) {
+  const runId = options.runId || makeRunId();
+  const envOverrides = options.envOverrides || {};
+  currentEnv = { ...process.env, ...envOverrides };
+  Object.assign(process.env, envOverrides);
 
-  console.log("Env snapshot:", envSnapshot);
-  const prompt = process.argv.slice(2).join(" ") || "Log into the app and extract the items list.";
-  const limitFromPrompt = detectExtractLimit(prompt);
+  const { envConfig, envSnapshot, APP_URL, mergedEnv } = buildEnv(envOverrides);
+  const PLAN_SIM_THRESHOLD = parseFloat(
+    mergedEnv.PLAN_SIM_THRESHOLD || PLAN_SIM_THRESHOLD_DEFAULT.toString()
+  );
+
+  const start = Date.now();
 
   // Performance tracking
   const perf = {
@@ -212,80 +233,104 @@ async function main() {
   let conceptualSteps = [];
   let embedding = null;
   let shouldSavePlan = false;
-  let planningMode = process.env.PLANNING_MODE || "hybrid";
+  let planningMode = mergedEnv.PLANNING_MODE || "hybrid";
+  let lastExtractResult = null;
+  let executionSuccess = false;
+  let caughtError = null;
+  let intentMetaSnapshot = null;
+  let embeddingMetaSnapshot = null;
+
+  const prompt = (promptInput && promptInput.trim()) || "Log into the app and extract the items list.";
+  const limitFromPrompt = detectExtractLimit(prompt);
 
   try {
-    embedding = await embedPrompt(prompt);
-    perf.embed_end = Date.now();
-  } catch {
-    embedding = null;
-    perf.embed_end = Date.now();
-  }
-
-  perf.lookup_start = Date.now();
-  if (embedding && embedding.length > 0) {
-    const cached = await findBestPlanByEmbedding(
-      embedding,
-      PLAN_SIM_THRESHOLD
-    );
-    perf.lookup_end = Date.now();
-
-    if (cached) {
-      console.log(
-        `[SAL] Plan cache HIT (id=${cached.id}, sim=${cached.similarity?.toFixed?.(3) ?? cached.similarity})`
-      );
-      await incrementHits(cached.id);
-      conceptualYaml = cached.yaml;
-      const parsed = yaml.load(cached.yaml);
-      conceptualSteps = (Array.isArray(parsed?.steps) && parsed.steps) || [];
-      planMeta = { source: "cache", cacheId: cached.id, similarity: cached.similarity };
-      await postEvent("plan", {
-        yaml: cached.yaml,
-        source: "cache",
-        similarity: cached.similarity
-      });
-    }
-  } else {
-    perf.lookup_end = Date.now();
-  }
-
-  // 2) Call planner if no cache hit
-  if (!conceptualSteps.length) {
-    console.log("[SAL] Plan cache MISS → calling planner");
-    perf.plan_start = Date.now();
-    const conceptual = await planConceptual(prompt, { limitFromPrompt });
-    perf.plan_end = Date.now();
-
-    conceptualYaml = conceptual.yaml;
-    conceptualSteps = conceptual.steps || [];
-    planMeta = { source: "dmr" };
-    shouldSavePlan = true; // Only save new plans after successful execution
-
-    await postEvent("plan", {
-      yaml: conceptualYaml,
-      source: "dmr"
+    await initPlanCache();
+    await initCDPPool({
+      size: parseInt(mergedEnv.CDP_POOL_SIZE || "1", 10) || 1,
+      cdpUrl: mergedEnv.LIGHTPANDA_CDP_URL
     });
-  } else {
-    perf.plan_start = perf.plan_end = Date.now();
-  }
 
-  perf.compile_start = Date.now();
+    console.log("Env snapshot:", envSnapshot);
 
-  // 3) Compile conceptual → executable plan
-  let execSteps = compilePlan(conceptualSteps, envConfig, { limitFromPrompt });
-  perf.compile_end = Date.now();
+    try {
+      embedding = await embedPrompt(prompt);
+      perf.embed_end = Date.now();
+      embeddingMetaSnapshot = lastEmbeddingMeta || { source: "unknown" };
+    } catch {
+      embedding = null;
+      perf.embed_end = Date.now();
+      embeddingMetaSnapshot = lastEmbeddingMeta || { source: "fallback_error" };
+    }
 
-  await postEvent("meta", {
-    source: planMeta.source,
-    prompt,
-    ts: new Date().toISOString(),
-    cache_id: planMeta.cacheId ?? null,
-    similarity: planMeta.similarity ?? null
-  });
+    perf.lookup_start = Date.now();
+    if (embedding && embedding.length > 0) {
+      const cached = await findBestPlanByEmbedding(
+        embedding,
+        PLAN_SIM_THRESHOLD
+      );
+      perf.lookup_end = Date.now();
 
-  await postEvent("exec_plan", {
-    yaml: yaml.dump({ steps: execSteps })
-  });
+      if (cached) {
+        console.log(
+          `[SAL] Plan cache HIT (id=${cached.id}, sim=${cached.similarity?.toFixed?.(3) ?? cached.similarity})`
+        );
+        await incrementHits(cached.id);
+        conceptualYaml = cached.yaml;
+        const parsed = yaml.load(cached.yaml);
+        conceptualSteps = (Array.isArray(parsed?.steps) && parsed.steps) || [];
+        planMeta = { source: "cache", cacheId: cached.id, similarity: cached.similarity };
+        intentMetaSnapshot = lastIntentMeta || { source: "cache_reused" };
+        await postEvent("plan", {
+          yaml: cached.yaml,
+          source: "cache",
+          similarity: cached.similarity
+        });
+      }
+    } else {
+      perf.lookup_end = Date.now();
+    }
+
+    // 2) Call planner if no cache hit
+    if (!conceptualSteps.length) {
+      console.log("[SAL] Plan cache MISS → calling planner");
+      perf.plan_start = Date.now();
+      const conceptual = await planConceptual(prompt, { limitFromPrompt });
+      perf.plan_end = Date.now();
+      intentMetaSnapshot = lastIntentMeta || { source: "dmr" };
+
+      conceptualYaml = conceptual.yaml;
+      conceptualSteps = conceptual.steps || [];
+      planMeta = { source: "dmr" };
+      shouldSavePlan = true; // Only save new plans after successful execution
+
+      await postEvent("plan", {
+        yaml: conceptualYaml,
+        source: "dmr"
+      });
+    } else {
+      perf.plan_start = perf.plan_end = Date.now();
+      if (!intentMetaSnapshot) {
+        intentMetaSnapshot = lastIntentMeta || { source: "cache_reused" };
+      }
+    }
+
+    perf.compile_start = Date.now();
+
+    // 3) Compile conceptual → executable plan
+    let execSteps = compilePlan(conceptualSteps, envConfig, { limitFromPrompt });
+    perf.compile_end = Date.now();
+
+    await postEvent("meta", {
+      source: planMeta.source,
+      prompt,
+      ts: new Date().toISOString(),
+      cache_id: planMeta.cacheId ?? null,
+      similarity: planMeta.similarity ?? null
+    });
+
+    await postEvent("exec_plan", {
+      yaml: yaml.dump({ steps: execSteps })
+    });
 
   if (
     !execSteps.length ||
@@ -299,7 +344,7 @@ async function main() {
     if (planMeta.cacheId) {
       await updateSuccessRate(planMeta.cacheId, false);
     }
-    return;
+    throw new Error("Executable plan invalid/empty");
   }
 
   // 4) Session persistence - check for valid session
@@ -309,62 +354,86 @@ async function main() {
   let sessionUsed = false;
 
   // 5) Execute via Lightpanda CDP
-  let executionSuccess = false;
-  try {
-    console.log("[SAL] Connecting to Lightpanda CDP:", process.env.LIGHTPANDA_CDP_URL);
+    console.log("[SAL] Connecting to Lightpanda CDP (via pool):", mergedEnv.LIGHTPANDA_CDP_URL);
     perf.connect_start = Date.now();
-    const browser = await chromium.connectOverCDP(process.env.LIGHTPANDA_CDP_URL);
-    let context = browser.contexts()[0];
-    if (!context) {
-      context = await browser.newContext({ ignoreHTTPSErrors: true });
-    }
-    const page = await context.newPage();
+    await withPage(async ({ context, page }) => {
+      const defaultTimeoutMs = parseInt(mergedEnv.RUN_STEP_TIMEOUT_MS || "15000", 10) || 15000;
+      context.setDefaultTimeout(defaultTimeoutMs);
+      page.setDefaultTimeout(defaultTimeoutMs);
+      // Restore session cookies if available
+      if (existingSession) {
+        console.log(`[SAL] Restoring session (id=${existingSession.id}, expires=${existingSession.expiresAt})`);
+        await context.addCookies(existingSession.cookies);
+        sessionUsed = true;
+        await updateSessionLastUsed(sessionId);
+      }
 
-    // Restore session cookies if available
-    if (existingSession) {
-      console.log(`[SAL] Restoring session (id=${existingSession.id}, expires=${existingSession.expiresAt})`);
-      await context.addCookies(existingSession.cookies);
-      sessionUsed = true;
-      await updateSessionLastUsed(sessionId);
-    }
+      perf.connect_end = Date.now();
+      perf.exec_start = Date.now();
 
-    perf.connect_end = Date.now();
-
-    perf.exec_start = Date.now();
-
-    // Filter out login steps if we have a valid session
-    let stepsToExecute = execSteps;
-    if (existingSession) {
-      // Skip steps that are part of authentication flow
-      // Heuristic: skip goto login, fill email/password, click submit
-      const authStepIds = new Set();
-      for (let i = 0; i < execSteps.length; i++) {
-        const step = execSteps[i];
-        // Detect login flow: goto /login, fill credentials, submit
-        if (step.action === 'goto' && step.url?.includes(process.env.LOGIN_PATH)) {
-          authStepIds.add(step.id);
-          // Skip next few steps (fill email, password, submit)
-          for (let j = i + 1; j < Math.min(i + 4, execSteps.length); j++) {
-            if (['fill', 'click'].includes(execSteps[j].action)) {
-              authStepIds.add(execSteps[j].id);
-            } else {
-              break; // Stop at first non-auth action
+      // Filter out login steps if we have a valid session
+      let stepsToExecute = execSteps;
+      if (existingSession) {
+        // Skip steps that are part of authentication flow
+        const authStepIds = new Set();
+        for (let i = 0; i < execSteps.length; i++) {
+          const step = execSteps[i];
+          if (step.action === 'goto' && step.url?.includes(mergedEnv.LOGIN_PATH)) {
+            authStepIds.add(step.id);
+            for (let j = i + 1; j < Math.min(i + 4, execSteps.length); j++) {
+              if (['fill', 'click'].includes(execSteps[j].action)) {
+                authStepIds.add(execSteps[j].id);
+              } else {
+                break;
+              }
             }
+            break;
           }
-          break;
+        }
+
+        if (authStepIds.size > 0) {
+          stepsToExecute = execSteps.filter(s => !authStepIds.has(s.id));
+          console.log(`[SAL] Session valid - skipping ${authStepIds.size} authentication steps`);
         }
       }
 
-      if (authStepIds.size > 0) {
-        stepsToExecute = execSteps.filter(s => !authStepIds.has(s.id));
-        console.log(`[SAL] Session valid - skipping ${authStepIds.size} authentication steps`);
+      for (const step of stepsToExecute) {
+        await executeStep(page, step);
+        if (step.action === "extract") {
+          // Last console.log in executeStep prints count; capture data if available on page
+          // Do a quick re-read to have structured count for summary
+          const sel = envReplace(step.selector || mergedEnv.ITEMS_SELECTOR || "");
+          const lim = Number.isFinite(step.limit) && step.limit > 0 ? step.limit : undefined;
+          try {
+            const items = await page.$$eval(sel, (nodes, limArg) =>
+              nodes.map((n) => ({
+                text: n.textContent.trim(),
+                attrs: Object.fromEntries([...n.attributes].map((a) => [a.name, a.value]))
+              })).slice(0, typeof limArg === "number" ? Math.max(0, limArg) : undefined),
+              lim
+            );
+            lastExtractResult = items;
+          } catch {
+            // ignore errors when capturing summary
+          }
+        }
       }
-    }
+      perf.exec_end = Date.now();
 
-    for (const step of stepsToExecute) {
-      await executeStep(page, step);
-    }
-    perf.exec_end = Date.now();
+      // Save session after successful execution (if we authenticated)
+      if (!sessionUsed) {
+        const cookies = await context.cookies();
+        if (cookies && cookies.length > 0) {
+          const newSessionId = await saveSession({
+            baseUrl: APP_URL,
+            cookies,
+            ttlSeconds: 3600 // 1 hour session TTL
+          });
+          console.log(`[SAL] Session saved (id=${newSessionId}, ttl=1h)`);
+          sessionId = newSessionId;
+        }
+      }
+    });
 
     executionSuccess = true;
 
@@ -392,23 +461,6 @@ async function main() {
         `compile=${compile_ms}ms connect=${connect_ms}ms exec=${exec_ms}ms`
     );
 
-    // Save session after successful execution (if we authenticated)
-    if (!sessionUsed && executionSuccess) {
-      // We just authenticated - save the session
-      const cookies = await context.cookies();
-      if (cookies && cookies.length > 0) {
-        const newSessionId = await saveSession({
-          baseUrl: APP_URL,
-          cookies,
-          ttlSeconds: 3600 // 1 hour session TTL
-        });
-        console.log(`[SAL] Session saved (id=${newSessionId}, ttl=1h)`);
-        sessionId = newSessionId;
-      }
-    }
-
-    await context.close();
-
     // Cache policy: Save plan only on successful execution
     if (shouldSavePlan && embedding && embedding.length > 0 && conceptualYaml) {
       await savePlan({
@@ -426,15 +478,60 @@ async function main() {
       await updateSuccessRate(planMeta.cacheId, true);
     }
   } catch (err) {
+    caughtError = err;
     console.error("[SAL] Execution failed:", err.message);
-
-    // Update success rate for cached plans on failure
+    if (!perf.embed_end) perf.embed_end = Date.now();
+    if (!embeddingMetaSnapshot) {
+      embeddingMetaSnapshot = lastEmbeddingMeta || { source: "not_attempted" };
+    }
+    if (!intentMetaSnapshot) {
+      intentMetaSnapshot = lastIntentMeta || { source: "unknown" };
+    }
     if (planMeta.cacheId) {
       await updateSuccessRate(planMeta.cacheId, false);
     }
+  } finally {
+    const embedMs = perf.embed_end - perf.embed_start;
+    const lookupMs = perf.lookup_end - perf.lookup_start;
+    const planMs = perf.plan_end - perf.plan_start;
+    const compileMs = perf.compile_end - perf.compile_start;
+    const connectMs = perf.connect_end - perf.connect_start;
+    const execMs = perf.exec_end - perf.exec_start;
+    const totalMs = (perf.exec_end || Date.now()) - start;
 
-    throw err;
+    const summary = {
+      runId,
+      prompt,
+      success: executionSuccess,
+      error: caughtError ? caughtError.message : null,
+      plan: planMeta,
+      intent: intentMetaSnapshot || lastIntentMeta,
+      embedding: embeddingMetaSnapshot || lastEmbeddingMeta,
+      timings: {
+        total_ms: totalMs,
+        embed_ms: embedMs,
+        lookup_ms: lookupMs,
+        plan_ms: planMs,
+        compile_ms: compileMs,
+        connect_ms: connectMs,
+        exec_ms: execMs
+      },
+      result_count: Array.isArray(lastExtractResult) ? lastExtractResult.length : null,
+      run_ts: new Date().toISOString()
+    };
+
+    console.log(`[SAL_RUN] ${JSON.stringify(summary)}`);
+  }
+
+  if (caughtError) {
+    throw caughtError;
   }
 }
 
-main();
+if (process.argv[1] && process.argv[1].includes("sal-cli.mjs")) {
+  const prompt = process.argv.slice(2).join(" ");
+  runSal(prompt).catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}
