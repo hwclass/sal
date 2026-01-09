@@ -5,6 +5,7 @@ const MAX_CACHE_SIZE = 1000; // LRU eviction after 1000 entries
 
 // Capability flag: Track if DMR embedding is incompatible (avoid repeated failures)
 let dmrEmbeddingDisabled = false;
+export let lastEmbeddingMeta = null;
 
 // Lazy-loaded local embedding model (fallback)
 let localEmbedder = null;
@@ -91,6 +92,7 @@ async function embedWithDMR(text) {
 
 export async function embedPrompt(text) {
   if (globalThis.__LPX_EMBED_DISABLED) return null;
+  lastEmbeddingMeta = { source: "unknown" };
 
   // Layer 1: Check in-memory cache first (0ms lookup)
   if (embeddingCache.has(text)) {
@@ -99,6 +101,7 @@ export async function embedPrompt(text) {
     const cached = embeddingCache.get(text);
     embeddingCache.delete(text);
     embeddingCache.set(text, cached);
+    lastEmbeddingMeta = { source: "memory" };
     return cached;
   }
 
@@ -109,6 +112,7 @@ export async function embedPrompt(text) {
     console.log("[SAL] Embedding cache HIT (DuckDB)");
     // Also cache in memory for next time
     cacheEmbedding(text, dbCached);
+    lastEmbeddingMeta = { source: "duckdb" };
     return dbCached;
   }
 
@@ -119,6 +123,7 @@ export async function embedPrompt(text) {
       // Cache in both layers
       cacheEmbedding(text, dmrEmb);
       await saveEmbedding(text, dmrEmb);
+      lastEmbeddingMeta = { source: "dmr" };
       return dmrEmb;
     }
   }
@@ -130,11 +135,13 @@ export async function embedPrompt(text) {
     // Cache in both layers
     cacheEmbedding(text, localEmb);
     await saveEmbedding(text, localEmb);
+    lastEmbeddingMeta = { source: "local" };
     return localEmb;
   }
 
   // If both fail, disable embeddings for this session
   console.warn("[SAL] All embedding methods failed; disabling cache for this session");
+  lastEmbeddingMeta = { source: "none", reason: "all_failed" };
   globalThis.__LPX_EMBED_DISABLED = true;
   return null;
 }

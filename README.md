@@ -379,6 +379,12 @@ PLAN_CACHE_PATH=/automation/plan-cache.duckdb  # Optional: external DuckDB path 
 
 # Browser Configuration
 LIGHTPANDA_CDP_URL=ws://lightpanda:9222
+CDP_POOL_SIZE=1  # Size of Playwright-over-CDP connection pool (for parallel runs)
+
+# Job Service (optional)
+JOB_SERVICE_PORT=8787
+JOB_SERVICE_TOKEN= # set to require Bearer token auth
+JOB_CONCURRENCY=1  # defaults to CDP_POOL_SIZE
 ```
 
 ### Customizing for Your App
@@ -420,6 +426,10 @@ cd sal-demo
 # Start all services
 docker compose up -d
 
+# Optional: run the job service (queue + basic UI)
+docker compose exec automation npm run service
+# UI: http://localhost:8787/ui  | API: GET/POST http://localhost:8787/jobs
+
 # Check status
 docker compose ps
 
@@ -433,6 +443,7 @@ docker compose logs -f automation
 - **DMR Configuration (optional):** Requires `LLAMA_ARG_POOLING=mean` on host; if absent, intent extraction falls back to regex and embeddings use local Transformers.js.
 - **Session Management:** Sessions expire after 1 hour by default (configurable).
 - **Monitoring:** Access real-time UI at `http://localhost:4000`
+- **Job Service:** Simple queue + UI at `http://localhost:8787/ui` (API at `/jobs`). Set `JOB_SERVICE_TOKEN` to require Bearer auth. Respects `PLAN_CACHE_PATH` for shared cache across runs.
 
 ---
 

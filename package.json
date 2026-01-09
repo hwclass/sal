@@ -6,6 +6,7 @@
     "puppeteer": "node puppeteer-demo.mjs",
     "playwright": "node playwright-demo.mjs",
     "sal": "node sal-cli.mjs",
+    "service": "node job-service.mjs",
     "test": "node test-suite.mjs"
   },
   "dependencies": {
