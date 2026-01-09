@@ -380,6 +380,7 @@ PLAN_CACHE_PATH=/automation/plan-cache.duckdb  # Optional: external DuckDB path 
 # Browser Configuration
 LIGHTPANDA_CDP_URL=ws://lightpanda:9222
 CDP_POOL_SIZE=1  # Size of Playwright-over-CDP connection pool (for parallel runs)
+RUN_STEP_TIMEOUT_MS=15000  # Default per-step timeout (ms)
 
 # Job Service (optional)
 JOB_SERVICE_PORT=8787
@@ -465,6 +466,13 @@ LOGIN_SUBMIT_SELECTOR=button[type="submit"]
 ITEMS_SELECTOR=.product-list .product-card
 ```
 Set these in `.env` or pass as overrides to the job service (`env` field in POST /jobs).
+
+### Worker/Job-Based Runs (real-site example)
+1) Configure selectors/paths for the target site in `.env` or per-job overrides (see example above).
+2) Start services (with job service): `docker compose --profile jobs up -d` (or `docker compose up -d` then `docker compose exec automation npm run service`).
+3) Enqueue a job: `curl -X POST http://localhost:8787/jobs -H "Content-Type: application/json" -d '{"prompt":"Log in and extract the first 3 products","env":{"TARGET_BASE_URL":"https://example.com","LOGIN_PATH":"/auth/login","ITEMS_PATH":"/products","ITEMS_SELECTOR":".product-card"}}'`
+4) Monitor: UI at `http://localhost:8787/ui`, metrics at `/metrics`, or GET `/jobs/:id` for status. Per-run structured logs appear as `[SAL_RUN] {...}` in automation logs.
+5) Verify cache benefits by rerunning similar prompts; DuckDB cache is persisted via `PLAN_CACHE_PATH` volume.
 
 ---
 
