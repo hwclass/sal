@@ -1,0 +1,19 @@
+{
+  "name": "sal-demo-automation",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "sal": "node sal-cli.mjs",
+    "puppeteer": "node puppeteer-demo.mjs",
+    "playwright": "node playwright-demo.mjs",
+    "benchmark": "node benchmarks.mjs",
+    "embedding-demo": "node embedding-demo.mjs"
+  },
+  "dependencies": {
+    "duckdb": "^1.1.0",
+    "js-yaml": "^4.1.0",
+    "playwright": "^1.49.0",
+    "puppeteer": "^24.32.0",
+    "@xenova/transformers": "^2.17.2"
+  }
+}
