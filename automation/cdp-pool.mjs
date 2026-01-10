@@ -42,13 +42,19 @@ function release(slot) {
 }
 
 export async function initCDPPool({ size = defaultSize, cdpUrl }) {
-  if (initialized) return;
+  if (initialized) {
+    console.log(`[CDP-POOL] Already initialized with ${slots.length} slots`);
+    return;
+  }
+  console.log(`[CDP-POOL] Initializing pool with ${size} slots connecting to ${cdpUrl}`);
   poolUrl = cdpUrl;
   for (let i = 0; i < size; i++) {
     const browser = await connectWithRetry(cdpUrl);
     slots.push({ id: i, browser, busy: false });
+    console.log(`[CDP-POOL] Slot ${i} connected`);
   }
   initialized = true;
+  console.log(`[CDP-POOL] Pool initialized successfully with ${slots.length} slots`);
 }
 
 export async function withPage(fn) {
@@ -58,9 +64,44 @@ export async function withPage(fn) {
   const slot = await borrow();
   let context;
   let page;
+  const recreateBrowser = async () => {
+    if (slot.browser) {
+      try {
+        await slot.browser.close();
+      } catch {
+        // ignore close errors
+      }
+    }
+    slot.browser = await connectWithRetry(poolUrl);
+  };
+
   try {
-    context = await slot.browser.newContext({ ignoreHTTPSErrors: true });
-    page = await context.newPage();
+    if (!slot.browser || (typeof slot.browser.isConnected === "function" && !slot.browser.isConnected())) {
+      await recreateBrowser();
+    }
+
+    let created = false;
+    for (let attempt = 0; attempt < 2 && !created; attempt++) {
+      try {
+        context = await slot.browser.newContext({ ignoreHTTPSErrors: true });
+        page = await context.newPage();
+        created = true;
+      } catch (err) {
+        const msg = (err && err.message) || String(err);
+        const isClosed =
+          msg.includes("has been closed") ||
+          msg.includes("Target closed") ||
+          msg.includes("Session closed");
+        if (!isClosed || attempt === 1) {
+          throw err;
+        }
+        // Browser in pool is dead; recreate and retry once.
+        await recreateBrowser();
+      }
+    }
+    if (!created) {
+      throw new Error("Failed to create browser context");
+    }
     return await fn({ slotId: slot.id, browser: slot.browser, context, page });
   } finally {
     if (context) {
@@ -87,4 +128,13 @@ export async function shutdownCDPPool() {
   waiters.length = 0;
   initialized = false;
   poolUrl = null;
+}
+
+export function isClosedError(err) {
+  const msg = (err && err.message) || String(err);
+  return (
+    msg.includes("has been closed") ||
+    msg.includes("Target closed") ||
+    msg.includes("Session closed")
+  );
 }
