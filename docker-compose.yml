@@ -53,7 +53,8 @@ services:
   lightpanda:
     image: lightpanda/browser:latest
     container_name: sal-lightpanda
-    command: ["serve", "--host", "0.0.0.0", "--port", "9222"]
+    # Explicitly invoke the binary; "serve" alone fails on this image
+    command: ["lightpanda", "serve", "--host", "0.0.0.0", "--port", "9222"]
     ports:
       - "9222:9222"
     restart: unless-stopped

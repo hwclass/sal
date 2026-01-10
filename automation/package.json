@@ -6,6 +6,7 @@
     "sal": "node sal-cli.mjs",
     "puppeteer": "node puppeteer-demo.mjs",
     "playwright": "node playwright-demo.mjs",
+    "service": "node job-service.mjs",
     "benchmark": "node benchmarks.mjs",
     "embedding-demo": "node embedding-demo.mjs"
   },

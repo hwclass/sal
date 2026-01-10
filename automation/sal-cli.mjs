@@ -15,7 +15,7 @@ import {
 } from "./plan-cache.mjs";
 import { embedPrompt, lastEmbeddingMeta } from "./embeddings.mjs";
 import { compilePlan } from "./plan-compiler.mjs";
-import { initCDPPool, withPage } from "./cdp-pool.mjs";
+import { initCDPPool, withPage, shutdownCDPPool, isClosedError } from "./cdp-pool.mjs";
 
 const UI_URL = "http://sal-ui:4000";
 const PLAN_SIM_THRESHOLD_DEFAULT = parseFloat(process.env.PLAN_SIM_THRESHOLD || "0.9");
@@ -356,7 +356,8 @@ export async function runSal(promptInput, options = {}) {
   // 5) Execute via Lightpanda CDP
     console.log("[SAL] Connecting to Lightpanda CDP (via pool):", mergedEnv.LIGHTPANDA_CDP_URL);
     perf.connect_start = Date.now();
-    await withPage(async ({ context, page }) => {
+
+    const runWithPool = async () => withPage(async ({ context, page }) => {
       const defaultTimeoutMs = parseInt(mergedEnv.RUN_STEP_TIMEOUT_MS || "15000", 10) || 15000;
       context.setDefaultTimeout(defaultTimeoutMs);
       page.setDefaultTimeout(defaultTimeoutMs);
@@ -434,6 +435,23 @@ export async function runSal(promptInput, options = {}) {
         }
       }
     });
+
+    const runWithReconnect = async () => {
+      try {
+        return await runWithPool();
+      } catch (err) {
+        if (!isClosedError(err)) throw err;
+        console.log("[SAL] CDP connection closed; resetting pool and retrying once");
+        await shutdownCDPPool();
+        await initCDPPool({
+          size: parseInt(mergedEnv.CDP_POOL_SIZE || "1", 10) || 1,
+          cdpUrl: mergedEnv.LIGHTPANDA_CDP_URL
+        });
+        return await runWithPool();
+      }
+    };
+
+    await runWithReconnect();
 
     executionSuccess = true;
 
@@ -517,10 +535,13 @@ export async function runSal(promptInput, options = {}) {
         exec_ms: execMs
       },
       result_count: Array.isArray(lastExtractResult) ? lastExtractResult.length : null,
+      results: Array.isArray(lastExtractResult) ? lastExtractResult : null,
       run_ts: new Date().toISOString()
     };
 
     console.log(`[SAL_RUN] ${JSON.stringify(summary)}`);
+
+    return summary;
   }
 
   if (caughtError) {

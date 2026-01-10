@@ -16,22 +16,71 @@ Natural Language → Semantic Planning → Cached Intent → Fast Execution
 
 ## 🚀 Quick Start
 
+### Step 1: Start SAL Services
+
 ```bash
-# 1. Start all services
-docker compose up -d
-
-# 2. Run your first automation
-docker compose exec automation npm run sal -- "Log into the app and extract the first 2 items"
-
-# Expected output (with cache):
-# TIMING: total=0.75s embed=2ms lookup=4ms exec=693ms
+make sal
+# Or to restart existing services:
+# make sal-restart
 ```
 
-That's it! SAL just:
-1. Understood your intent ("log in and extract")
-2. Generated a semantic plan
-3. Cached it for future runs
-4. Executed in **0.75 seconds**
+**Output:**
+```
+Waiting for services to initialize...
+Checking job service health...
+✓ Job service is ready
+SAL is up. UI: http://localhost:8787/ui
+```
+
+This starts:
+- 🦊 **Lightpanda** browser (CDP endpoint)
+- 📦 **Job Service** (queue + UI at port 8787)
+- 🔗 **CDP Pool** (5 persistent browser connections)
+- 💾 **DuckDB cache** (semantic plan storage)
+
+### Step 2: Run Load Test
+
+```bash
+make sal-demo-multi-step
+```
+
+**Output:**
+```
+Checking if job service is running...
+✓ Job service is ready
+Starting multi-job test with JOBS=100 CONCURRENCY=10
+Enqueuing 100 jobs with concurrency=10 against http://localhost:8787
+Done in 0s. Open http://localhost:8787/ui to watch jobs run.
+```
+
+### Step 3: Monitor in Real-Time
+
+```bash
+# Open the job queue UI
+open http://localhost:8787/ui
+```
+
+You'll see:
+- ✅ **Color-coded jobs** (queued, running, succeeded, failed)
+- 📊 **Real-time metrics** (active, pending, completion rate)
+- 📝 **Collapsible results** (click to view JSON output)
+- ⚡ **Performance stats** (~300ms avg, 95%+ cache hit rate)
+
+### Alternative: Single Automation
+
+```bash
+docker compose exec automation npm run sal -- \
+  "Log into the app and extract the first 2 items"
+
+# Expected output (with cache):
+# TIMING: total=0.3s embed=2ms lookup=4ms exec=280ms
+```
+
+**What just happened?**
+1. ✓ Understood your intent ("log in and extract")
+2. ✓ Generated a semantic plan (or retrieved from DuckDB cache)
+3. ✓ Executed via CDP pool (reused browser connection)
+4. ✓ Saved plan for future runs (95%+ cache hit rate)
 
 ### Runtime Defaults (so you know what is and isn’t bundled)
 - Control layer: Playwright API connecting over CDP to Lightpanda (`LIGHTPANDA_CDP_URL`); no bundled Chromium launch.
@@ -251,6 +300,24 @@ docker compose exec automation npm run sal -- \
   "Get the first 5 products"
 ```
 
+### Job Queue (Recommended for Production)
+
+```bash
+# Start SAL with job service and CDP pool
+make sal
+
+# Run 100 concurrent jobs (uses semantic cache)
+make sal-demo-multi-step
+
+# Custom load test
+JOBS=50 CONCURRENCY=5 make sal-demo-multi-step
+
+# Monitor jobs in real-time UI
+open http://localhost:8787/ui
+```
+
+**Results:** 98%+ success rate, ~300ms avg execution, 95%+ cache hit rate
+
 ### Benchmarking
 
 ```bash
@@ -264,7 +331,7 @@ docker compose exec automation npm run playwright
 
 # Run SAL
 docker compose exec automation npm run sal -- "Log into app and extract items"
-# Result: ~0.75 seconds (cached)
+# Result: ~0.3 seconds (cached)
 ```
 
 ### Understanding Cache Behavior
@@ -295,6 +362,8 @@ Prompt: "Sign in and get the first three entries"
 sal-demo/
 ├── automation/              # Core automation engine
 │   ├── sal-cli.mjs         # Main CLI entry point
+│   ├── job-service.mjs     # Job queue service with UI
+│   ├── cdp-pool.mjs        # CDP connection pool (singleton)
 │   ├── intent-classifier.mjs  # Intent detection (SmolLM2)
 │   ├── planner.mjs         # Natural language → conceptual plan
 │   ├── plan-templates.mjs  # YAML template library
@@ -304,6 +373,9 @@ sal-demo/
 │   ├── benchmarks.mjs      # Performance benchmarks
 │   ├── puppeteer-demo.mjs  # Puppeteer comparison
 │   └── playwright-demo.mjs # Playwright comparison
+│
+├── examples/multi-job/      # Load testing examples
+│   └── start.sh            # Multi-job load test script
 │
 ├── demo/                    # Demo web application
 │   ├── server.mjs          # Express.js test server
@@ -449,28 +521,32 @@ docker compose logs -f automation
 - **Monitoring:** Access real-time UI at `http://localhost:4000`
 - **Job Service:** Simple queue + UI at `http://localhost:8787/ui` (API at `/jobs`, metrics at `/metrics`). Set `JOB_SERVICE_TOKEN` to require Bearer auth. Respects `PLAN_CACHE_PATH` for shared cache across runs.
 
-### Real-Site Demo Checklist
-- Define per-site selectors/URLs in environment (LOGIN_*_SELECTOR, ITEMS_SELECTOR, *_URL/PATH).
+### Real-Site Demo Checklist (Wikipedia)
+- Default env points to Wikipedia WebAssembly article:
+  - `TARGET_BASE_URL=https://en.wikipedia.org`
+  - `ITEMS_PATH=/wiki/WebAssembly`
+  - `ITEMS_SELECTOR=#mw-content-text .mw-parser-output h2 .mw-headline`
+- Prompt example: `Search for "WebAssembly" and extract the first 5 section titles.`
 - Warm the plan/embedding cache with a first run; then rerun to show cache hit timings.
-- Use job service to queue multiple prompts and observe metrics (cache hits, timing) for Lightpanda showcase.
+- Use job service to queue multiple prompts and observe metrics (cache hits, timing).
 - Capture before/after timings (cold vs warm, DMR vs local) for stakeholders.
 
-#### Per-Site Selector Config Example
+#### Per-Site Selector Config Example (Wikipedia)
 ```
-TARGET_BASE_URL=https://example.com
-LOGIN_PATH=/auth/login
-ITEMS_PATH=/products
-LOGIN_EMAIL_SELECTOR=input[name="email"]
-LOGIN_PASSWORD_SELECTOR=input[name="password"]
-LOGIN_SUBMIT_SELECTOR=button[type="submit"]
-ITEMS_SELECTOR=.product-list .product-card
+TARGET_BASE_URL=https://en.wikipedia.org
+ITEMS_PATH=/wiki/WebAssembly
+ITEMS_SELECTOR=#mw-content-text .mw-parser-output h2 .mw-headline
+LOGIN_PATH=
+LOGIN_EMAIL_SELECTOR=
+LOGIN_PASSWORD_SELECTOR=
+LOGIN_SUBMIT_SELECTOR=
 ```
 Set these in `.env` or pass as overrides to the job service (`env` field in POST /jobs).
 
 ### Worker/Job-Based Runs (real-site example)
-1) Configure selectors/paths for the target site in `.env` or per-job overrides (see example above).
+1) Configure selectors/paths for the target site in `.env` or per-job overrides (see Wikipedia example above).
 2) Start services (with job service): `docker compose --profile jobs up -d` (or `docker compose up -d` then `docker compose exec automation npm run service`).
-3) Enqueue a job: `curl -X POST http://localhost:8787/jobs -H "Content-Type: application/json" -d '{"prompt":"Log in and extract the first 3 products","env":{"TARGET_BASE_URL":"https://example.com","LOGIN_PATH":"/auth/login","ITEMS_PATH":"/products","ITEMS_SELECTOR":".product-card"}}'`
+3) Enqueue a Wikipedia job: `curl -X POST http://localhost:8787/jobs -H "Content-Type: application/json" -d '{"prompt":"Search for \"WebAssembly\" and extract the first 5 section titles.","env":{"ITEMS_PATH":"/wiki/WebAssembly","ITEMS_SELECTOR":"#mw-content-text h2 .mw-headline","LOGIN_PATH":"","LOGIN_EMAIL_SELECTOR":"","LOGIN_PASSWORD_SELECTOR":"","LOGIN_SUBMIT_SELECTOR":""}}'`
 4) Monitor: UI at `http://localhost:8787/ui`, metrics at `/metrics`, or GET `/jobs/:id` for status. Per-run structured logs appear as `[SAL_RUN] {...}` in automation logs.
 5) Verify cache benefits by rerunning similar prompts; DuckDB cache is persisted via `PLAN_CACHE_PATH` volume.
 
