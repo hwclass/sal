@@ -240,6 +240,16 @@ export async function runSal(promptInput, options = {}) {
   let intentMetaSnapshot = null;
   let embeddingMetaSnapshot = null;
 
+  // Three-dimensional outcome tracking
+  let navigationStatus = "not_attempted"; // success | failure | not_attempted
+  let extractionStatus = "not_attempted"; // success | attempted_but_empty | not_attempted
+  let executionIntegrity = "unknown"; // plan_reused | plan_generated | execution_error
+
+  // Semantic grounding phase tracking
+  let groundingAttempted = false;
+  let groundingRoles = [];
+  let groundingConfidence = "unknown"; // high | low | unknown
+
   const prompt = (promptInput && promptInput.trim()) || "Log into the app and extract the items list.";
   const limitFromPrompt = detectExtractLimit(prompt);
 
@@ -280,6 +290,7 @@ export async function runSal(promptInput, options = {}) {
         conceptualSteps = (Array.isArray(parsed?.steps) && parsed.steps) || [];
         planMeta = { source: "cache", cacheId: cached.id, similarity: cached.similarity };
         intentMetaSnapshot = lastIntentMeta || { source: "cache_reused" };
+        executionIntegrity = "plan_reused"; // Cache hit = plan reused
         await postEvent("plan", {
           yaml: cached.yaml,
           source: "cache",
@@ -302,6 +313,7 @@ export async function runSal(promptInput, options = {}) {
       conceptualSteps = conceptual.steps || [];
       planMeta = { source: "dmr" };
       shouldSavePlan = true; // Only save new plans after successful execution
+      executionIntegrity = "plan_generated"; // Cache miss = new plan generated
 
       await postEvent("plan", {
         yaml: conceptualYaml,
@@ -400,11 +412,24 @@ export async function runSal(promptInput, options = {}) {
 
       for (const step of stepsToExecute) {
         await executeStep(page, step);
+
+        // Track navigation attempts
+        if (step.action === "goto" || step.action === "click") {
+          navigationStatus = "success"; // If we got here, navigation succeeded
+        }
+
         if (step.action === "extract") {
           // Last console.log in executeStep prints count; capture data if available on page
           // Do a quick re-read to have structured count for summary
           const sel = envReplace(step.selector || mergedEnv.ITEMS_SELECTOR || "");
           const lim = Number.isFinite(step.limit) && step.limit > 0 ? step.limit : undefined;
+
+          // Track grounding attempt
+          groundingAttempted = true;
+          groundingRoles.push("content_root", "item_unit");
+          groundingConfidence = sel && sel.trim() ? "low" : "unknown";
+          extractionStatus = "attempted_but_empty"; // Default assumption
+
           try {
             const items = await page.$$eval(sel, (nodes, limArg) =>
               nodes.map((n) => ({
@@ -414,8 +439,16 @@ export async function runSal(promptInput, options = {}) {
               lim
             );
             lastExtractResult = items;
-          } catch {
-            // ignore errors when capturing summary
+
+            // Update extraction status based on results
+            if (items && items.length > 0) {
+              extractionStatus = "success";
+              groundingConfidence = "high";
+            }
+          } catch (extractError) {
+            // Extraction failed - grounding issue
+            console.log(`[SAL] Extraction failed for selector: ${sel}`);
+            extractionStatus = "attempted_but_empty";
           }
         }
       }
@@ -498,6 +531,9 @@ export async function runSal(promptInput, options = {}) {
   } catch (err) {
     caughtError = err;
     console.error("[SAL] Execution failed:", err.message);
+    executionIntegrity = "execution_error";
+    navigationStatus = "failure";
+
     if (!perf.embed_end) perf.embed_end = Date.now();
     if (!embeddingMetaSnapshot) {
       embeddingMetaSnapshot = lastEmbeddingMeta || { source: "not_attempted" };
@@ -522,6 +558,21 @@ export async function runSal(promptInput, options = {}) {
       prompt,
       success: executionSuccess,
       error: caughtError ? caughtError.message : null,
+
+      // Three-dimensional outcome model
+      outcome: {
+        navigation_status: navigationStatus,
+        extraction_status: extractionStatus,
+        execution_integrity: executionIntegrity
+      },
+
+      // Semantic grounding phase tracking
+      grounding: {
+        attempted: groundingAttempted,
+        roles: groundingRoles,
+        confidence: groundingConfidence
+      },
+
       plan: planMeta,
       intent: intentMetaSnapshot || lastIntentMeta,
       embedding: embeddingMetaSnapshot || lastEmbeddingMeta,
