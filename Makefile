@@ -33,7 +33,7 @@ sal-restart:
 	@curl -sf http://localhost:8787/health > /dev/null && echo "✓ Job service is ready" || echo "✗ Job service not ready"
 	@echo "SAL restarted. UI: http://localhost:8787/ui"
 
-# Run the multi-job demo load test
+# Run the multi-job demo load test (same prompt, many jobs)
 # This waits for the job service to be healthy before running
 sal-demo-multi-step: examples-perms
 	@echo "Checking if job service is running..."
@@ -52,3 +52,23 @@ sal-demo-multi-step: examples-perms
 	fi
 	@echo "Starting multi-job test with JOBS=$(JOBS) CONCURRENCY=$(CONCURRENCY)"
 	JOBS=$(JOBS) CONCURRENCY=$(CONCURRENCY) JOB_SERVICE_URL=$(JOB_SERVICE_URL) examples/multi-job/start.sh
+
+# Run the multi-prompt demo (many different prompts, semantic cache test)
+sal-demo-multi-prompt: examples-perms
+	@chmod +x examples/multi-prompt/run.sh
+	@echo "Checking if job service is running..."
+	@timeout=30; while [ $$timeout -gt 0 ]; do \
+		if curl -sf http://localhost:8787/health > /dev/null 2>&1; then \
+			echo "✓ Job service is ready"; \
+			break; \
+		fi; \
+		echo "Waiting for job service... ($$timeout seconds remaining)"; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done
+	@if ! curl -sf http://localhost:8787/health > /dev/null 2>&1; then \
+		echo "✗ Job service is not responding. Run 'make sal-restart' first."; \
+		exit 1; \
+	fi
+	@echo "Starting multi-prompt demo with 30 diverse prompts"
+	CONCURRENCY=$(CONCURRENCY) JOB_SERVICE_URL=$(JOB_SERVICE_URL) examples/multi-prompt/run.sh

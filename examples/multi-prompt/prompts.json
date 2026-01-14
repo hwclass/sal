@@ -1,0 +1,125 @@
+{
+  "description": "Multi-Job Execution: Semantic plan caching with deterministic navigation",
+  "jobs": [
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/WebAssembly"
+    },
+    {
+      "task": "Get the opening paragraph",
+      "target": "/wiki/WebAssembly"
+    },
+    {
+      "task": "Extract the introductory paragraph",
+      "target": "/wiki/WebAssembly"
+    },
+    {
+      "task": "Return the first paragraph of content",
+      "target": "/wiki/WebAssembly"
+    },
+    {
+      "task": "Show the first text paragraph",
+      "target": "/wiki/WebAssembly"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Rust_(programming_language)"
+    },
+    {
+      "task": "Get the opening paragraph",
+      "target": "/wiki/Rust_(programming_language)"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Python_(programming_language)"
+    },
+    {
+      "task": "Return the opening paragraph",
+      "target": "/wiki/Python_(programming_language)"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Go_(programming_language)"
+    },
+    {
+      "task": "Get the opening paragraph",
+      "target": "/wiki/Go_(programming_language)"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/JavaScript"
+    },
+    {
+      "task": "Return the first paragraph",
+      "target": "/wiki/JavaScript"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/TypeScript"
+    },
+    {
+      "task": "Get the opening paragraph",
+      "target": "/wiki/TypeScript"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Docker_(software)"
+    },
+    {
+      "task": "Return the opening paragraph",
+      "target": "/wiki/Docker_(software)"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Kubernetes"
+    },
+    {
+      "task": "Get the first paragraph",
+      "target": "/wiki/Kubernetes"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Node.js"
+    },
+    {
+      "task": "Return the opening paragraph",
+      "target": "/wiki/Node.js"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/React_(software)"
+    },
+    {
+      "task": "Get the first paragraph",
+      "target": "/wiki/React_(software)"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Angular_(web_framework)"
+    },
+    {
+      "task": "Return the opening paragraph",
+      "target": "/wiki/Angular_(web_framework)"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Vue.js"
+    },
+    {
+      "task": "Get the opening paragraph",
+      "target": "/wiki/Vue.js"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/PostgreSQL"
+    },
+    {
+      "task": "Return the first paragraph",
+      "target": "/wiki/PostgreSQL"
+    },
+    {
+      "task": "Extract the first paragraph",
+      "target": "/wiki/Redis"
+    }
+  ]
+}
